@@ -1,3 +1,4 @@
+export LC_ALL=C.UTF-8
 CI_DESC="CI job running thread sanitizer"
 CI_DIR=build-tsan
 export CXX=clang++

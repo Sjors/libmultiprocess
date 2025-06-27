@@ -1,3 +1,4 @@
+export LC_ALL=C.UTF-8
 CI_DESC="CI job using default libraries and tools, and running IWYU"
 CI_DIR=build-default
 export CXXFLAGS="-Werror -Wall -Wextra -Wpedantic -Wno-unused-parameter"

@@ -1,3 +1,4 @@
+export LC_ALL=C.UTF-8
 CI_DESC="CI job using LLVM-based libraries and tools (clang, libc++, clang-tidy, iwyu) and testing Ninja"
 CI_DIR=build-llvm
 NIX_ARGS=(--arg enableLibcxx true)

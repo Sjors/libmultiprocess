@@ -1,3 +1,4 @@
+export LC_ALL=C.UTF-8
 CI_DESC="CI job cross-compiling to 32-bit"
 CI_DIR=build-gnu32
 NIX_ARGS=(
