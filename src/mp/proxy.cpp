@@ -25,7 +25,6 @@
 #include <kj/memory.h>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -313,13 +312,13 @@ bool EventLoop::done() const
     return m_num_clients == 0 && m_async_fns->empty();
 }
 
-std::tuple<ConnThread, bool> SetThread(ConnThreads& threads, std::mutex& mutex, Connection* connection, const std::function<Thread::Client()>& make_thread)
+std::tuple<ConnThread, bool> SetThread(ConnThreads& threads, Mutex& mutex, Connection* connection, const std::function<Thread::Client()>& make_thread)
 {
     assert(std::this_thread::get_id() == connection->m_loop->m_thread_id);
     ConnThread thread;
     bool inserted;
     {
-        const std::unique_lock<std::mutex> lock(mutex);
+        const Lock lock(mutex);
         std::tie(thread, inserted) = threads.try_emplace(connection);
     }
     if (inserted) {
@@ -336,7 +335,7 @@ std::tuple<ConnThread, bool> SetThread(ConnThreads& threads, std::mutex& mutex, 
             thread->second->m_disconnect_cb.reset();
 
             // Remove connection pointer about to be destroyed from the map
-            const std::unique_lock<std::mutex> lock(mutex);
+            const Lock lock(mutex);
             threads.erase(thread);
         });
     }
@@ -378,7 +377,7 @@ ProxyServer<Thread>::~ProxyServer()
     assert(m_thread_context.waiter.get());
     std::unique_ptr<Waiter> waiter;
     {
-        const std::unique_lock<std::mutex> lock(m_thread_context.waiter->m_mutex);
+        const Lock lock(m_thread_context.waiter->m_mutex);
         //! Reset thread context waiter pointer, as shutdown signal for done
         //! lambda passed as waiter->wait() argument in makeThread code below.
         waiter = std::move(m_thread_context.waiter);
@@ -412,7 +411,7 @@ kj::Promise<void> ProxyServer<ThreadMap>::makeThread(MakeThreadContext context)
         g_thread_context.thread_name = ThreadName(m_connection.m_loop->m_exe_name) + " (from " + from + ")";
         g_thread_context.waiter = std::make_unique<Waiter>();
         thread_context.set_value(&g_thread_context);
-        std::unique_lock<std::mutex> lock(g_thread_context.waiter->m_mutex);
+        Lock lock(g_thread_context.waiter->m_mutex);
         // Wait for shutdown signal from ProxyServer<Thread> destructor (signal
         // is just waiter getting set to null.)
         g_thread_context.waiter->wait(lock, [] { return !g_thread_context.waiter; });

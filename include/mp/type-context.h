@@ -118,7 +118,7 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
                             // without violating lock order.
                             ConnThreads::node_type removed;
                             {
-                                std::unique_lock<std::mutex> lock(thread_context.waiter->m_mutex);
+                                Lock lock(thread_context.waiter->m_mutex);
                                 removed = request_threads.extract(server.m_context.connection);
                             }
                         });

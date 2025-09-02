@@ -273,16 +273,16 @@ struct Waiter
     template <typename Fn>
     void post(Fn&& fn)
     {
-        const std::unique_lock<std::mutex> lock(m_mutex);
+        const Lock lock(m_mutex);
         assert(!m_fn);
         m_fn = std::forward<Fn>(fn);
         m_cv.notify_all();
     }
 
     template <class Predicate>
-    void wait(std::unique_lock<std::mutex>& lock, Predicate pred)
+    void wait(Lock& lock, Predicate pred)
     {
-        m_cv.wait(lock, [&] {
+        m_cv.wait(lock.m_lock, [&] {
             // Important for this to be "while (m_fn)", not "if (m_fn)" to avoid
             // a lost-wakeup bug. A new m_fn and m_cv notification might be sent
             // after the fn() call and before the lock.lock() call in this loop
@@ -305,7 +305,7 @@ struct Waiter
     //! mutexes than necessary. This mutex can be held at the same time as
     //! EventLoop::m_mutex as long as Waiter::mutex is locked first and
     //! EventLoop::m_mutex is locked second.
-    std::mutex m_mutex;
+    Mutex m_mutex;
     std::condition_variable m_cv;
     std::optional<kj::Function<void()>> m_fn;
 };
@@ -544,7 +544,7 @@ using ConnThread = ConnThreads::iterator;
 // Retrieve ProxyClient<Thread> object associated with this connection from a
 // map, or create a new one and insert it into the map. Return map iterator and
 // inserted bool.
-std::tuple<ConnThread, bool> SetThread(ConnThreads& threads, std::mutex& mutex, Connection* connection, const std::function<Thread::Client()>& make_thread);
+std::tuple<ConnThread, bool> SetThread(ConnThreads& threads, Mutex& mutex, Connection* connection, const std::function<Thread::Client()>& make_thread);
 
 //! The thread_local ThreadContext g_thread_context struct provides information
 //! about individual threads and a way of communicating between them. Because
@@ -609,7 +609,7 @@ struct ThreadContext
     //! request thread argument passed in that request.
     //!
     //! Synchronization note: \ref callback_threads note applies here as well.
-    ConnThreads request_threads;
+    ConnThreads request_threads MP_GUARDED_BY(waiter->m_mutex);
 
     //! Whether this thread is a capnp event loop thread. Not really used except
     //! to assert false if there's an attempt to execute a blocking operation
