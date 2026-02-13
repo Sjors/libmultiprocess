@@ -689,24 +689,26 @@ struct ThreadContext
 template<typename T, typename Fn>
 kj::Promise<T> ProxyServer<Thread>::post(Fn&& fn)
 {
-    auto result = kj::newPromiseAndFulfiller<T>(); // Signaled when fn() is called, with its return value.
-    bool posted = m_thread_context.waiter->post([this, fn = std::forward<Fn>(fn), result_fulfiller = kj::mv(result.fulfiller)]() mutable {
-        std::optional<T> result_value;
-        kj::Maybe<kj::Exception> exception{kj::runCatchingExceptions([&]{ result_value.emplace(fn()); })};
-        m_loop->sync([&result_value, &exception, result_fulfiller = kj::mv(result_fulfiller)]() mutable {
-            KJ_IF_MAYBE(e, exception) {
-                assert(!result_value);
-                result_fulfiller->reject(kj::mv(*e));
-            } else {
-                assert(result_value);
-                result_fulfiller->fulfill(kj::mv(*result_value));
-                result_value.reset();
-            }
-            result_fulfiller = nullptr;
+    {
+        auto result = kj::newPromiseAndFulfiller<T>(); // Signaled when fn() is called, with its return value.
+        bool posted = m_thread_context.waiter->post([this, fn = std::forward<Fn>(fn), result_fulfiller = kj::mv(result.fulfiller)]() mutable {
+            std::optional<T> result_value;
+            kj::Maybe<kj::Exception> exception{kj::runCatchingExceptions([&]{ result_value.emplace(fn()); })};
+            m_loop->sync([&result_value, &exception, result_fulfiller = kj::mv(result_fulfiller)]() mutable {
+                KJ_IF_MAYBE(e, exception) {
+                    assert(!result_value);
+                    result_fulfiller->reject(kj::mv(*e));
+                } else {
+                    assert(result_value);
+                    result_fulfiller->fulfill(kj::mv(*result_value));
+                    result_value.reset();
+                }
+                result_fulfiller = nullptr;
+            });
         });
-    });
-    if (!posted) throw std::runtime_error("thread busy");
-    return kj::mv(result.promise);
+        if (!posted) throw std::runtime_error("thread busy");
+        return kj::mv(result.promise);
+    }
 }
 
 //! Given stream file descriptor, make a new ProxyClient object to send requests
