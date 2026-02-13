@@ -125,16 +125,16 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
                     });
                     fn.invoke(server_context, args...);
                 }
-                KJ_IF_MAYBE(exception, kj::runCatchingExceptions([&]() {
-                    server.m_context.loop->sync([&] {
-                        auto fulfiller_dispose = kj::mv(fulfiller);
-                        fulfiller_dispose->fulfill(kj::mv(call_context));
-                    });
-                }))
+                KJ_IF_MAYBE(exception, kj::runCatchingExceptions([&]() {}))
                 {
                     server.m_context.loop->sync([&]() {
                         auto fulfiller_dispose = kj::mv(fulfiller);
                         fulfiller_dispose->reject(kj::mv(*exception));
+                    });
+                } else {
+                    server.m_context.loop->sync([&] {
+                        auto fulfiller_dispose = kj::mv(fulfiller);
+                        fulfiller_dispose->fulfill(kj::mv(call_context));
                     });
                 }
             };
