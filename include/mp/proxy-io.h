@@ -322,7 +322,9 @@ public:
 //! thread is blocked waiting for server response, this is what allows the
 //! client to run the request in the same thread, the same way code would run in a
 //! single process, with the callback sharing the same thread stack as the original
-//! call.)
+//! call.) To support this, the clientInvoke function calls Waiter::wait() to
+//! block the client IPC thread while initial request is in progress. Then if
+//! there is a callback, it is executed with Waiter::post().
 struct Waiter
 {
     Waiter() = default;
