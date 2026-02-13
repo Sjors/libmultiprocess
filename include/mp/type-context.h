@@ -26,7 +26,7 @@ void CustomBuildField(TypeList<>,
     // future calls over this connection can reuse it.
     auto [callback_thread, _]{SetThread(
         GuardedRef{thread_context.waiter->m_mutex, thread_context.callback_threads}, &connection,
-        [&] { return connection.m_threads.add(kj::heap<ProxyServer<Thread>>(thread_context, std::thread{})); })};
+        [&] { return connection.m_threads.add(kj::heap<ProxyServer<Thread>>(connection, thread_context, std::thread{})); })};
 
     // Call remote ThreadMap.makeThread function so server will create a
     // dedicated worker thread to run function calls from this thread. Store the
@@ -61,8 +61,6 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
 {
     const auto& params = server_context.call_context.getParams();
     Context::Reader context_arg = Accessor::get(params);
-    auto future = kj::newPromiseAndFulfiller<typename ServerContext::CallContext>();
-    auto fulfiller = kj::mv(future.fulfiller);
     auto& server = server_context.proxy_server;
     int req = server_context.req;
     auto invoke = [call_context = kj::mv(server_context.call_context), &server, req, fn, args...]() mutable {
@@ -133,7 +131,7 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
     // asynchronously with getLocalServer().
     auto thread_client = context_arg.getThread();
     return server.m_context.connection->m_threads.getLocalServer(thread_client)
-        .then([&server, invoke = kj::mv(invoke), req, fulfiller = kj::mv(fulfiller)](const kj::Maybe<Thread::Server&>& perhaps) mutable {
+        .then([&server, invoke = kj::mv(invoke), req](const kj::Maybe<Thread::Server&>& perhaps) mutable {
             // Assuming the thread object is found, pass it a pointer to the
             // `invoke` lambda above which will invoke the function on that
             // thread.
@@ -142,8 +140,7 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
                 MP_LOG(*server.m_context.loop, Log::Debug)
                     << "IPC server post request  #" << req << " {" << thread.m_thread_context.thread_name << "}";
                 try {
-                    thread.template post<typename ServerContext::CallContext>(
-                        *server.m_context.loop, kj::mv(fulfiller), std::move(invoke));
+                    return thread.template post<typename ServerContext::CallContext>(std::move(invoke));
                 } catch (const std::runtime_error&) {
                     MP_LOG(*server.m_context.loop, Log::Error)
                         << "IPC server error request #" << req
@@ -155,9 +152,7 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
                     << "IPC server error request #" << req << ", missing thread to execute request";
                 throw std::runtime_error("invalid thread handle");
             }
-        })
-        // Wait for the invocation to finish before returning to the caller.
-        .then([invoke_wait = kj::mv(future.promise)]() mutable { return kj::mv(invoke_wait); });
+        });
 }
 } // namespace mp
 
