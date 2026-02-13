@@ -139,14 +139,7 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
                 auto& thread = static_cast<ProxyServer<Thread>&>(*thread_server);
                 MP_LOG(*server.m_context.loop, Log::Debug)
                     << "IPC server post request  #" << req << " {" << thread.m_thread_context.thread_name << "}";
-                try {
-                    return thread.template post<typename ServerContext::CallContext>(std::move(invoke));
-                } catch (const std::runtime_error&) {
-                    MP_LOG(*server.m_context.loop, Log::Error)
-                        << "IPC server error request #" << req
-                        << " {" << thread.m_thread_context.thread_name << "}" << ", thread busy";
-                    throw;
-                }
+                return thread.template post<typename ServerContext::CallContext>(std::move(invoke));
             } else {
                 MP_LOG(*server.m_context.loop, Log::Error)
                     << "IPC server error request #" << req << ", missing thread to execute request";
