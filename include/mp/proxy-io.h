@@ -85,6 +85,10 @@ public:
     ProxyServer(ThreadContext& thread_context, std::thread&& thread);
     ~ProxyServer();
     kj::Promise<void> getName(GetNameContext context) override;
+
+    template<typename T, typename Fn>
+    void post(EventLoop& loop, kj::Own<kj::PromiseFulfiller<T>> fulfiller, Fn&& fn);
+
     ThreadContext& m_thread_context;
     std::thread m_thread;
 };
@@ -325,6 +329,9 @@ public:
 //! call.) To support this, the clientInvoke function calls Waiter::wait() to
 //! block the client IPC thread while initial request is in progress. Then if
 //! there is a callback, it is executed with Waiter::post().
+//!
+//! The Waiter class is also used server-side by `ProxyServer<Thread>::post()`
+//! to execute IPC calls on worker threads.
 struct Waiter
 {
     Waiter() = default;
@@ -676,6 +683,28 @@ struct ThreadContext
     //! which could deadlock the thread.
     bool loop_thread = false;
 };
+
+template<typename T, typename Fn>
+void ProxyServer<Thread>::post(EventLoop& loop, kj::Own<kj::PromiseFulfiller<T>> fulfiller, Fn&& fn)
+{
+    if (!m_thread_context.waiter->post([&loop, fn = std::forward<Fn>(fn), fulfiller = kj::mv(fulfiller)]() mutable {
+            std::optional<T> result_value;
+            KJ_IF_MAYBE(exception, kj::runCatchingExceptions([&]() { result_value.emplace(fn()); }))
+            {
+                loop.sync([&]() {
+                    auto fulfiller_dispose = kj::mv(fulfiller);
+                    fulfiller_dispose->reject(kj::mv(*exception));
+                });
+            } else {
+                loop.sync([&]() {
+                    auto fulfiller_dispose = kj::mv(fulfiller);
+                    fulfiller_dispose->fulfill(kj::mv(*result_value));
+                });
+            }
+        })) {
+        throw std::runtime_error("thread busy");
+    }
+}
 
 //! Given stream file descriptor, make a new ProxyClient object to send requests
 //! over the stream. Also create a new Connection object embedded in the

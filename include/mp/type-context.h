@@ -62,10 +62,10 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
     const auto& params = server_context.call_context.getParams();
     Context::Reader context_arg = Accessor::get(params);
     auto future = kj::newPromiseAndFulfiller<typename ServerContext::CallContext>();
+    auto fulfiller = kj::mv(future.fulfiller);
     auto& server = server_context.proxy_server;
     int req = server_context.req;
-    auto invoke = [fulfiller = kj::mv(future.fulfiller),
-         call_context = kj::mv(server_context.call_context), &server, req, fn, args...]() mutable {
+    auto invoke = [call_context = kj::mv(server_context.call_context), &server, req, fn, args...]() mutable {
                 const auto& params = call_context.getParams();
                 Context::Reader context_arg = Accessor::get(params);
                 ServerContext server_context{server, call_context, req};
@@ -125,18 +125,7 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
                     });
                     fn.invoke(server_context, args...);
                 }
-                KJ_IF_MAYBE(exception, kj::runCatchingExceptions([&]() {}))
-                {
-                    server.m_context.loop->sync([&]() {
-                        auto fulfiller_dispose = kj::mv(fulfiller);
-                        fulfiller_dispose->reject(kj::mv(*exception));
-                    });
-                } else {
-                    server.m_context.loop->sync([&] {
-                        auto fulfiller_dispose = kj::mv(fulfiller);
-                        fulfiller_dispose->fulfill(kj::mv(call_context));
-                    });
-                }
+                return call_context;
             };
 
     // Lookup Thread object specified by the client. The specified thread should
@@ -144,19 +133,22 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
     // asynchronously with getLocalServer().
     auto thread_client = context_arg.getThread();
     return server.m_context.connection->m_threads.getLocalServer(thread_client)
-        .then([&server, invoke = kj::mv(invoke), req](const kj::Maybe<Thread::Server&>& perhaps) mutable {
+        .then([&server, invoke = kj::mv(invoke), req, fulfiller = kj::mv(fulfiller)](const kj::Maybe<Thread::Server&>& perhaps) mutable {
             // Assuming the thread object is found, pass it a pointer to the
             // `invoke` lambda above which will invoke the function on that
             // thread.
             KJ_IF_MAYBE (thread_server, perhaps) {
-                const auto& thread = static_cast<ProxyServer<Thread>&>(*thread_server);
+                auto& thread = static_cast<ProxyServer<Thread>&>(*thread_server);
                 MP_LOG(*server.m_context.loop, Log::Debug)
                     << "IPC server post request  #" << req << " {" << thread.m_thread_context.thread_name << "}";
-                if (!thread.m_thread_context.waiter->post(std::move(invoke))) {
+                try {
+                    thread.template post<typename ServerContext::CallContext>(
+                        *server.m_context.loop, kj::mv(fulfiller), std::move(invoke));
+                } catch (const std::runtime_error&) {
                     MP_LOG(*server.m_context.loop, Log::Error)
                         << "IPC server error request #" << req
                         << " {" << thread.m_thread_context.thread_name << "}" << ", thread busy";
-                    throw std::runtime_error("thread busy");
+                    throw;
                 }
             } else {
                 MP_LOG(*server.m_context.loop, Log::Error)
