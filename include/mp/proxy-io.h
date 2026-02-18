@@ -53,17 +53,18 @@ struct ServerInvokeContext : InvokeContext
     //! results structs if the request is canceled while the worker thread is
     //! reading params (`call_context.getParams()`) or writing results
     //! (`call_context.getResults()`).
-    Lock* cancel_lock{nullptr};
+    Mutex cancel_mutex;
+    Lock cancel_lock;
     //! For IPC methods that execute asynchronously, not on the event-loop
     //! thread, this is set to true if the IPC call was canceled by the client
     //! or canceled by a disconnection. If the call runs on the event-loop
     //! thread, it can't be canceled.
-    bool request_canceled{false};
+    bool request_canceled MP_GUARDED_BY(cancel_mutex){false};
 
     ServerInvokeContext(ProxyServer& proxy_server, CallContext& call_context, int req)
-        : InvokeContext{*proxy_server.m_context.connection}, proxy_server{proxy_server}, call_context{call_context}, req{req}
-    {
-    }
+        : InvokeContext{*proxy_server.m_context.connection}, proxy_server{proxy_server}, call_context{call_context}, req{req},
+          cancel_lock{cancel_mutex}
+    {}
 };
 
 template <typename Interface, typename Params, typename Results>

@@ -97,18 +97,17 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
                     auto& request_threads = thread_context.request_threads;
                     ConnThread request_thread;
                     bool inserted;
-                    Mutex cancel_mutex;
-                    Lock cancel_lock{cancel_mutex};
-                    server_context.cancel_lock = &cancel_lock;
+                    server_context.cancel_lock.unlock();
                     server.m_context.loop->sync([&] {
                         // Detect request being canceled before it executes.
                         if (cancel_monitor.m_canceled) {
+                            Lock lock{server_context.cancel_mutex};
                             server_context.request_canceled = true;
                             return;
                         }
                         // Detect request being canceled while it executes.
                         assert(!cancel_monitor.m_on_cancel);
-                        cancel_monitor.m_on_cancel = [&server, &server_context, &cancel_mutex, req]() {
+                        cancel_monitor.m_on_cancel = [&server, &server_context, req]() {
                             MP_LOG(*server.m_context.loop, Log::Info) << "IPC server request #" << req << " canceled while executing.";
                             // Lock cancel_mutex here to block the event loop
                             // thread and prevent it from deleting the request's
@@ -122,7 +121,7 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
                             // the lock, the execution thread always checks
                             // request_canceled after acquiring it to check if
                             // it is still safe to use the structs.
-                            Lock{cancel_mutex};
+                            Lock{server_context.cancel_mutex};
                             server_context.request_canceled = true;
                         };
                         // Update requests_threads map if not canceled.
@@ -130,6 +129,7 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
                             GuardedRef{thread_context.waiter->m_mutex, request_threads}, server.m_context.connection,
                             [&] { return context_arg.getCallbackThread(); });
                     });
+                    server_context.cancel_lock.lock();
                     // If an entry was inserted into the request_threads map,
                     // remove it after calling fn.invoke. If an entry was not
                     // inserted, one already existed, meaning this must be a
@@ -144,7 +144,7 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
                         // this point because the fn.invoke() call below will be
                         // finished and no longer accessing the parameters or
                         // response structs.
-                        cancel_lock.m_lock.unlock();
+                        server_context.cancel_lock.unlock();
                         // Erase the request_threads entry on the event loop
                         // thread with loop->sync(), so if the connection is
                         // broken there is not a race between this thread and
