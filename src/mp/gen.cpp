@@ -444,6 +444,8 @@ static void Generate(kj::StringPtr src_prefix,
                 add_accessor(field_name);
                 dec << "    using " << Cap(field_name) << "Accessor = Accessor<" << base_name
                     << "_fields::" << Cap(field_name) << ", FIELD_IN | FIELD_OUT";
+                if (field.optional) dec << " | FIELD_OPTIONAL";
+                if (field.requested) dec << " | FIELD_REQUESTED";
                 if (BoxedType(field.param.getType())) dec << " | FIELD_BOXED";
                 dec << ">;\n";
             }
