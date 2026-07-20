@@ -6,6 +6,7 @@
 #include <mp/util.h>
 
 #include <cerrno>
+#include <cstddef>
 #include <cstdio>
 #include <fcntl.h>
 #include <kj/common.h>
@@ -58,6 +59,18 @@ size_t MaxFd()
     } else {
         return 1023;
     }
+}
+
+//! Report an error and exit from the post-fork child of a multi-threaded
+//! process, where only async-signal-safe calls (like write and _exit) are
+//! allowed. Accepting only a reference to a char array (in practice a string
+//! literal) ensures no allocation is needed at the call site.
+template <std::size_t N>
+[[noreturn]] void ChildFail(const char (&msg)[N]) noexcept
+{
+    const ssize_t written = ::write(STDERR_FILENO, msg, N - 1);
+    (void)written;
+    _exit(126);
 }
 
 } // namespace
@@ -147,10 +160,7 @@ std::tuple<ProcessId, SocketId> SpawnProcess(SpawnConnectInfoToArgsFn&& connect_
             (void)close(fds[1]);
             throw std::system_error(errno, std::system_category(), "close");
         }
-        static constexpr char msg[] = "SpawnProcess(child): close(fds[1]) failed\n";
-        const ssize_t writeResult = ::write(STDERR_FILENO, msg, sizeof(msg) - 1);
-        (void)writeResult;
-        _exit(126);
+        ChildFail("SpawnProcess(child): close(fds[1]) failed\n");
     }
 
     if (!pid) {
