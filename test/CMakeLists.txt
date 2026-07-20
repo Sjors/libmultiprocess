@@ -35,6 +35,7 @@ if(BUILD_TESTING AND TARGET CapnProto::kj-test)
   target_include_directories(mptest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(mptest PRIVATE CapnProto::kj-test)
   target_link_libraries(mptest PRIVATE Threads::Threads)
+  target_link_libraries(mptest PRIVATE ${CMAKE_DL_LIBS})
 
   add_dependencies(mptests mptest)
   add_test(NAME mptest COMMAND mptest)
