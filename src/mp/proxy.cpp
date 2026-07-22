@@ -40,11 +40,10 @@
 
 namespace mp {
 
-thread_local ThreadContext g_thread_context; // NOLINT(bitcoin-nontrivial-threadlocal)
-
 ThreadContext& CurrentThread()
 {
-    return g_thread_context;
+    thread_local ThreadContext context; // NOLINT(bitcoin-nontrivial-threadlocal)
+    return context;
 }
 
 Stream MakeStream(EventLoop&loop, SocketId socket)

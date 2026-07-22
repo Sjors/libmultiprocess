@@ -929,12 +929,7 @@ void ListenConnections(EventLoop& loop, SocketId fd, InitImpl& init, std::option
     });
 }
 
-extern thread_local ThreadContext g_thread_context; // NOLINT(bitcoin-nontrivial-threadlocal)
-// Silence nonstandard bitcoin tidy error "Variable with non-trivial destructor
-// cannot be thread_local" which should not be a problem on modern platforms, and
-// could lead to a small memory leak at worst on older ones.
-
-//! Return the current thread's ThreadContext.
+//! Return the current thread's ThreadContext, creating it on first use.
 //!
 //! Why per-thread state is needed at all: libmultiprocess has no control over
 //! which threads the C++ application uses to call ProxyClient methods after
