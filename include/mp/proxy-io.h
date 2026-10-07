@@ -953,10 +953,12 @@ void ListenConnections(EventLoop& loop, SocketId fd, InitImpl& init, std::option
     });
 }
 
+#ifndef __MINGW32__
 extern thread_local ThreadContext g_thread_context; // NOLINT(bitcoin-nontrivial-threadlocal)
 // Silence nonstandard bitcoin tidy error "Variable with non-trivial destructor
 // cannot be thread_local" which should not be a problem on modern platforms, and
 // could lead to a small memory leak at worst on older ones.
+#endif
 
 //! Return the current thread's ThreadContext.
 //!
@@ -975,7 +977,13 @@ extern thread_local ThreadContext g_thread_context; // NOLINT(bitcoin-nontrivial
 //! are freed. A thread_local object is the C++ mechanism that provides both
 //! of these: per-thread storage plus a destructor that runs at thread exit
 //! (the C equivalent would be a pthread key destructor). This is why
-//! ThreadContext is thread_local and why its destructor is nontrivial.
+//! the per-thread context needs a nontrivial destructor.
+//!
+//! On MinGW, CurrentThread() keeps the context on the heap and registers its
+//! deletion directly with the CRT's thread-exit callbacks. Some native GCC
+//! builds invoke C++ destructors after freeing emulated TLS storage; passing
+//! the heap object to the callback avoids accessing that freed storage while
+//! still releasing the exited client's remote workers.
 ThreadContext& CurrentThread();
 
 } // namespace mp

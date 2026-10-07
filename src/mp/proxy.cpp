@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -42,11 +43,34 @@
 
 namespace mp {
 
+#ifdef __MINGW32__
+// Native MinGW builds can free emulated TLS storage before invoking C++
+// destructors. Register deletion of a heap object directly, so the callback
+// does not need to read the thread_local pointer or other freed TLS storage.
+extern "C" int __mingw_cxa_thread_atexit(void (__thiscall* dtor)(void*), void* object, void* dso);
+
+static void __thiscall DeleteThreadContext(void* object)
+{
+    delete static_cast<ThreadContext*>(object);
+}
+#else
 thread_local ThreadContext g_thread_context; // NOLINT(bitcoin-nontrivial-threadlocal)
+#endif
 
 ThreadContext& CurrentThread()
 {
+#ifdef __MINGW32__
+    thread_local ThreadContext* context = [] {
+        auto object = std::make_unique<ThreadContext>();
+        if (__mingw_cxa_thread_atexit(DeleteThreadContext, object.get(), nullptr) != 0) {
+            throw std::bad_alloc{};
+        }
+        return object.release();
+    }();
+    return *context;
+#else
     return g_thread_context;
+#endif
 }
 
 void ThreadClients::clear()

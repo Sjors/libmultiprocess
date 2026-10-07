@@ -933,5 +933,33 @@ KJ_TEST("Call async IPC method without thread or pool errors correctly")
     KJ_EXPECT(error_thrown);
 }
 
+KJ_TEST("Exited clients release workers before disconnect")
+{
+    std::mutex mutex;
+    std::condition_variable cv;
+    unsigned exits = 0;
+    TestSetup setup;
+    auto* foo = setup.client.get();
+    EventLoop& loop = *foo->m_context.loop;
+    loop.testing_hook_misc = [&](std::any arg) {
+        if (const char* const* tag{std::any_cast<const char*>(&arg)};
+            tag && std::string_view{*tag} == "worker thread exit") {
+            std::lock_guard lock(mutex);
+            ++exits;
+            cv.notify_all();
+        }
+    };
+    setup.initAsyncCalls();
+    for (unsigned i = 0; i < 100; ++i) {
+        std::thread caller{[&] { foo->callFnAsync(); }};
+        caller.join();
+        std::unique_lock lock(mutex);
+        const bool released = cv.wait_for(lock, std::chrono::seconds{5}, [&] { return exits == i + 1; });
+        KJ_EXPECT(released, i, exits);
+        if (!released) break;
+    }
+    // setup keeps the connection open until all checks above have completed.
+}
+
 } // namespace test
 } // namespace mp
